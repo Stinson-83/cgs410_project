@@ -57,6 +57,7 @@ Examples:
     python main.py --max_depth 5 --num_sentences 5    # Quick test run
     python main.py --model_name bert-base-uncased     # Specify model
     python main.py --device cuda                      # Use GPU
+    python main.py --custom_sentences "The cat sat on the mat." "Another sentence."
     python main.py --pruning threshold --threshold 0.1
         """,
     )
@@ -64,6 +65,10 @@ Examples:
     parser.add_argument(
         "--model_name", type=str, default=config.MODEL_NAME,
         help=f"HuggingFace model name (default: {config.MODEL_NAME})",
+    )
+    parser.add_argument(
+        "--custom_sentences", nargs='+', default=None,
+        help="Run analysis on one or more custom sentences instead of generated sentences.",
     )
     parser.add_argument(
         "--max_depth", type=int, default=config.MAX_DEPTH,
@@ -152,6 +157,7 @@ def main():
             attention_threshold=args.threshold,
             device=args.device,
             results_dir=current_results_dir,
+            custom_sentences=args.custom_sentences,
         )
 
         # ── Generate visualizations ──────────────────────────────────────────

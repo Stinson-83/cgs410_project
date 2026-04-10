@@ -41,6 +41,7 @@ def run_experiment(
     attention_threshold: float = 0.1,
     device: str = "cpu",
     results_dir: str = "results",
+    custom_sentences: Optional[list] = None,
 ) -> Dict[str, Any]:
     """
     Execute the full experimental pipeline.
@@ -55,6 +56,7 @@ def run_experiment(
         attention_threshold: Threshold for attention graph pruning.
         device: "cpu" or "cuda".
         results_dir: Output directory.
+        custom_sentences: A list of specific sentences to test, bypassing generation.
 
     Returns:
         Complete results dictionary with per-depth, per-layer, per-head metrics.
@@ -62,10 +64,15 @@ def run_experiment(
     os.makedirs(results_dir, exist_ok=True)
     start_time = time.time()
 
-    # ── Step 1: Generate sentences ───────────────────────────────────────────
-    logger.info(f"Generating sentences (max_depth={max_depth}, "
-                f"num_per_depth={num_sentences})...")
-    all_sentences = generate_sentences(max_depth, num_sentences, seed)
+    # ── Step 1: Generate or use custom sentences ─────────────────────────────
+    if custom_sentences:
+        logger.info(f"Using {len(custom_sentences)} custom sentences sequentially mapped to depths")
+        max_depth = len(custom_sentences)
+        all_sentences = {depth: [(sent, "custom")] for depth, sent in enumerate(custom_sentences, start=1)}
+    else:
+        logger.info(f"Generating sentences (max_depth={max_depth}, "
+                    f"num_per_depth={num_sentences})...")
+        all_sentences = generate_sentences(max_depth, num_sentences, seed)
 
     # ── Step 2: Initialize model ─────────────────────────────────────────────
     logger.info(f"Loading model: {model_name} on {device}...")

@@ -1,4 +1,4 @@
-# Emergence and Limits of Dependency Structure in Transformer Attention Under Increasing Recursive Depth
+# Emergence and Limits of Dependency Structure in Transformer Attention
 
 A research pipeline investigating whether transformer attention mechanisms dynamically construct syntactic dependency structures during inference, and how robust this mechanism is as sentences become more recursively complex.
 
@@ -8,110 +8,141 @@ A research pipeline investigating whether transformer attention mechanisms dynam
 
 ## Hypothesis
 
-- Intermediate transformer layers partially approximate syntactic dependency trees
-- As recursion depth increases, dependency distances grow and alignment weakens
-- This suggests transformers rely more on **local token interactions** than fully hierarchical representations at higher depths
+- Intermediate transformer layers partially approximate syntactic dependency trees.
+- As recursion depth increases, dependency distances grow and alignment weakens.
+- This suggests transformers rely more on **local token interactions** than fully hierarchical representations at higher depths.
+
+## Architecture and Workflow
+
+The project consists of a full experimental pipeline that takes text (either procedurally generated or user-provided) and processes it through 6 distinct stages:
+
+1. **Text Acquisition**:
+   - *Generation Mode*: Uses `data/generator.py` to create controlled recursive sentences across varying depths (e.g., Subject Relative Clauses, Object Relative Clauses, PP Stacking).
+   - *Custom Inference Mode*: Bypasses generation to analyze custom sentences provided directly via CLI.
+2. **Gold Dependency Parsing**: Uses `spaCy` (`en_core_web_sm`) inside `parsing/dependency_parser.py` to extract the true (gold) syntactic dependency trees acting as the ground truth.
+3. **Attention Extraction**: Uses HuggingFace models (e.g., `bert-base-uncased`) via `models/attention_extractor.py` to run inference and extract multi-head attention weights across all layers.
+4. **Attention Graph Construction**: Transforms high-dimensional attention weights into directed graphs using various pruning algorithms (MST, Top-K, Threshold) in `graphs/attention_graph.py`.
+5. **Metric Computation**: Compares attention-derived graphs to gold trees to quantify syntactic alignment using established metrics in `metrics/comparison.py`.
+6. **Visualization & Synthesis**: Generates heatmaps, bar charts, and JSON reports detailing performance across layers and recursion depths in `visualization/plots.py`.
 
 ## Project Structure
 
-```
+```text
 project/
-├── config.py                   # Central configuration
-├── main.py                     # CLI entry point
-├── requirements.txt            # Dependencies
+├── config.py                   # Central configuration parameters
+├── main.py                     # CLI entry point orchestrator
+├── requirements.txt            # Python dependencies
 │
 ├── data/
 │   └── generator.py            # Controlled recursive sentence generation
-│
 ├── parsing/
 │   └── dependency_parser.py    # Gold dependency tree extraction (spaCy)
-│
 ├── models/
-│   └── attention_extractor.py  # BERT attention weight extraction + alignment
-│
+│   └── attention_extractor.py  # BERT attention extraction + token alignment
 ├── graphs/
-│   └── attention_graph.py      # Attention → directed graph conversion
-│
+│   └── attention_graph.py      # Attention → directed graph conversion (Pruning)
 ├── metrics/
-│   └── comparison.py           # 4 comparison metrics (DERR, USO, TDC, AMTH)
-│
+│   └── comparison.py           # Evaluation metrics (DERR, USO, TDC, AMTH)
 ├── experiments/
-│   └── runner.py               # Experiment orchestrator
-│
+│   └── runner.py               # Experiment orchestration
 ├── visualization/
-│   └── plots.py                # Publication-quality visualizations
-│
+│   └── plots.py                # Publication-quality visualizations (Matplotlib)
 └── results/                    # Generated outputs (metrics + figures)
-    └── figures/
 ```
+
+## Pruning Strategies
+
+To convert raw dense attention mechanisms into distinct graph edges that model syntactic structures, the pipeline supports multiple pruning strategies. Results for different strategies are securely saved into independent directories (e.g., `results/mst/`, `results/top_k/`) to prevent overlapping or overwriting.
+
+- **Maximum Spanning Tree (MST)**: Ideal for finding a connected, tree-like structure from attention weights.
+- **Top-K**: Retains the `k` highest probability attention edges per token.
+- **Threshold**: Hard-pruning of edges below a specific probability.
 
 ## Installation
 
 ```bash
-# Create virtual environment (recommended)
+# Create a virtual environment (recommended)
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Download spaCy model
+# Download the required spaCy model (essential for gold dependency parsing)
 python -m spacy download en_core_web_sm
 ```
+*Note: If offline, you can directly pip install the `.whl` files provided in the root directory.*
 
-## Usage
+## How to Run (Usage)
 
+The primary entry point is `main.py`, which is heavily parameterised for flexibility.
+
+### 1. Default Pipeline Run
+Runs the full pipeline generating recursive sentences (depth 1-7, 10 sentences each) against BERT and evaluates both `mst` and `top_k` pruning strategies sequentially.
 ```bash
-# Full pipeline with defaults (depth 1-7, 10 sentences/depth, BERT)
 python main.py
-
-# Quick test run
-python main.py --max_depth 3 --num_sentences 3
-
-# Use GPU
-python main.py --device cuda
-
-# Custom configuration
-python main.py --max_depth 10 --num_sentences 20 --model_name bert-base-uncased
-
-# Threshold-based pruning instead of top-k
-python main.py --pruning threshold --threshold 0.1
-
-python main.py --pruning top_k
-
-python main.py --pruning mst
 ```
 
-## Metrics
+### 2. Fast Testing
+Ideal for debugging or quickly generating small sample metric sets.
+```bash
+python main.py --max_depth 3 --num_sentences 3
+```
+
+### 3. Executing on Custom Sentences 
+To visualize the alignment of custom text rather than using the recursive generator:
+```bash
+python main.py --custom_sentences "The cat sat on the mat." "Transformers learn contextual representations."
+```
+
+### 4. Customizing Pruning Strategies
+You can select a specific pruning technique instead of running the default (both `mst` and `top_k`).
+
+```bash
+# Evaluate ONLY maximum spanning tree (MST)
+python main.py --pruning mst
+
+# Evaluate ONLY top-K edges
+python main.py --pruning top_k --top_k 2
+
+# Evaluate based on hard probability thresholds
+python main.py --pruning threshold --threshold 0.1
+```
+
+### 5. Hardware & Model Overrides
+```bash
+# Run with GPU acceleration
+python main.py --device cuda
+
+# Override HuggingFace models
+python main.py --model_name roberta-base
+```
+
+## Metrics Explanation
+
+The pipeline computes four key metrics indicating structural alignment:
 
 | Metric | Abbreviation | Range | Description |
 |--------|-------------|-------|-------------|
-| Dependency Edge Recovery Rate | DERR | [0, 1] | Fraction of gold edges recovered in attention graph |
-| Undirected Structural Overlap | USO | [0, 1] | Jaccard similarity of undirected edge sets |
-| Tree Distance Correlation | TDC | [-1, 1] | Spearman correlation of pairwise shortest-path distances |
-| Attention Mass on True Head | AMTH | [0, 1] | Mean attention weight on syntactic head |
+| **Dependency Edge Recovery Rate** | DERR | `[0, 1]` | Fraction of gold dependency edges recovered in the extracted attention graph. |
+| **Undirected Structural Overlap** | USO | `[0, 1]` | Jaccard similarity of undirected edge sets between attention and gold tree. |
+| **Tree Distance Correlation** | TDC | `[-1, 1]` | Spearman correlation of pairwise shortest-path distances in the tree vs attention graphs. |
+| **Attention Mass on True Head** | AMTH | `[0, 1]` | Average model attention weight focused exactly on a token's syntactic head. |
 
 ## Outputs
 
-After running, check `results/` for:
-- `metrics_results.json` — Per-depth, per-layer aggregated metrics
-- `figures/depth_vs_alignment.png` — How alignment degrades with depth
-- `figures/layer_vs_alignment_heatmap.png` — Which layers capture syntax best
-- `figures/attention_heatmap_example.png` — Attention weights with gold edges
-- `figures/dependency_overlay_example.png` — Gold tree vs attention graph
-- `figures/head_analysis.png` — Best heads per layer
+All outcomes are placed in the `results/` directory, separated by the pruning strategy used (e.g., `results/mst/`, `results/top_k/`). An output bundle will contain:
 
-## Sentence Templates
-
-Three template families ensure diversity:
-
-1. **Subject Relative Clauses**: "The dog that chased the cat barked."
-2. **Object Relative Clauses**: "The man saw the dog that chased the cat."
-3. **PP Stacking**: "The boy on the roof near the chimney laughed."
+- `metrics_results.json`: Per-depth, per-layer aggregated metrics (DERR, USO, TDC, AMTH).
+- `figures/depth_vs_alignment.png`: Shows how syntactic alignment degrades as recursive depth (complexity) increases.
+- `figures/layer_vs_alignment_heatmap.png`: Identifies which transformer layers capture syntax best.
+- `figures/attention_heatmap_example.png`: Raw attention weights overlapped with gold edges.
+- `figures/dependency_overlay_example.png`: Networkx visualizations of the gold tree vs attention graph.
+- `figures/head_analysis.png`: Highlights the specific heads responsible for capturing grammar per layer.
 
 ## References
 
-- Hewitt & Manning (2019): *A Structural Probe for Finding Syntax in Word Representations*
-- Clark et al. (2019): *What Does BERT Look At? An Analysis of BERT's Attention*
-- Tenney et al. (2019): *BERT Rediscovers the Classical NLP Pipeline*
-- Jawahar et al. (2019): *What Does BERT Learn about the Structure of Language?*
+- **Hewitt & Manning (2019)**: *A Structural Probe for Finding Syntax in Word Representations*
+- **Clark et al. (2019)**: *What Does BERT Look At? An Analysis of BERT's Attention*
+- **Tenney et al. (2019)**: *BERT Rediscovers the Classical NLP Pipeline*
+- **Jawahar et al. (2019)**: *What Does BERT Learn about the Structure of Language?*
