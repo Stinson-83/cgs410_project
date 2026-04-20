@@ -14,16 +14,18 @@ A research pipeline investigating whether transformer attention mechanisms dynam
 
 ## Architecture and Workflow
 
-The project consists of a full experimental pipeline that takes text (either procedurally generated or user-provided) and processes it through 6 distinct stages:
+The project consists of a full experimental pipeline that takes text (either procedurally generated, from SUD treebanks, or user-provided) and processes it through 7 distinct stages:
 
 1. **Text Acquisition**:
    - *Generation Mode*: Uses `data/generator.py` to create controlled recursive sentences across varying depths (e.g., Subject Relative Clauses, Object Relative Clauses, PP Stacking).
+   - *SUD Treebank Mode*: Uses `data/sud_loader.py` to load naturalistic sentences from Surface-syntactic Universal Dependencies treebanks (English, German, Hindi), binned by dependency tree depth.
    - *Custom Inference Mode*: Bypasses generation to analyze custom sentences provided directly via CLI.
-2. **Gold Dependency Parsing**: Uses `spaCy` (`en_core_web_sm`) inside `parsing/dependency_parser.py` to extract the true (gold) syntactic dependency trees acting as the ground truth.
-3. **Attention Extraction**: Uses HuggingFace models (e.g., `bert-base-uncased`) via `models/attention_extractor.py` to run inference and extract multi-head attention weights across all layers.
+2. **Gold Dependency Parsing**: Uses `spaCy` (`en_core_web_sm`) inside `parsing/dependency_parser.py` for generated data, or SUD gold annotations directly for treebank data.
+3. **Attention Extraction**: Uses HuggingFace models (BERT, RoBERTa, GPT-2, mBERT) via `models/attention_extractor.py` to run inference and extract multi-head attention weights across all layers.
 4. **Attention Graph Construction**: Transforms high-dimensional attention weights into directed graphs using various pruning algorithms (MST, Top-K, Threshold) in `graphs/attention_graph.py`.
 5. **Metric Computation**: Compares attention-derived graphs to gold trees to quantify syntactic alignment using established metrics in `metrics/comparison.py`.
-6. **Visualization & Synthesis**: Generates heatmaps, bar charts, and JSON reports detailing performance across layers and recursion depths in `visualization/plots.py`.
+6. **Statistical Inference**: Runs Spearman correlation, Mann-Whitney U tests, and computes rank-biserial effect sizes via `metrics/statistics.py`.
+7. **Visualization & Synthesis**: Generates heatmaps, bar charts, and JSON reports detailing performance across layers and recursion depths in `visualization/plots.py`.
 
 ## Project Structure
 
@@ -34,20 +36,22 @@ project/
 ├── requirements.txt            # Python dependencies
 │
 ├── data/
-│   └── generator.py            # Controlled recursive sentence generation
+│   ├── generator.py            # Controlled recursive sentence generation
+│   └── sud_loader.py           # SUD treebank CoNLL-U loader + depth binning
 ├── parsing/
 │   └── dependency_parser.py    # Gold dependency tree extraction (spaCy)
 ├── models/
-│   └── attention_extractor.py  # BERT attention extraction + token alignment
+│   └── attention_extractor.py  # Multi-model attention extraction + alignment
 ├── graphs/
 │   └── attention_graph.py      # Attention → directed graph conversion (Pruning)
 ├── metrics/
-│   └── comparison.py           # Evaluation metrics (DERR, USO, TDC, AMTH)
+│   ├── comparison.py           # Evaluation metrics (DERR, USO, TDC, AMTH)
+│   └── statistics.py           # Statistical inference (Spearman, Mann-Whitney)
 ├── experiments/
-│   └── runner.py               # Experiment orchestration
+│   └── runner.py               # Experiment orchestration (generated + SUD)
 ├── visualization/
 │   └── plots.py                # Publication-quality visualizations (Matplotlib)
-└── results/                    # Generated outputs (metrics + figures)
+└── results/                    # Generated outputs (metrics + figures + stats)
 ```
 
 ## Pruning Strategies

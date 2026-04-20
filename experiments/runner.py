@@ -23,6 +23,7 @@ from tqdm import tqdm
 from typing import Dict, Any, Optional
 
 from data.generator import generate_sentences
+from data.sud_loader import load_sud_treebank
 from parsing.dependency_parser import parse_sentence, get_gold_edges, get_undirected_edges
 from models.attention_extractor import AttentionExtractor
 from graphs.attention_graph import build_attention_graph
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 def run_experiment(
     model_name: str = "bert-base-uncased",
     max_depth: int = 7,
-    num_sentences: int = 10,
+    num_sentences: int = 30,
     seed: int = 42,
     pruning_strategy: str = "top_k",
     top_k: int = 1,
@@ -42,6 +43,7 @@ def run_experiment(
     device: str = "cpu",
     results_dir: str = "results",
     custom_sentences: Optional[list] = None,
+    sud_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Execute the full experimental pipeline.
@@ -51,24 +53,47 @@ def run_experiment(
         max_depth: Maximum recursion depth.
         num_sentences: Sentences per depth.
         seed: Random seed.
-        pruning_strategy: "top_k" or "threshold".
+        pruning_strategy: "top_k", "threshold", or "mst".
         top_k: Top-k for attention graph pruning.
         attention_threshold: Threshold for attention graph pruning.
         device: "cpu" or "cuda".
         results_dir: Output directory.
         custom_sentences: A list of specific sentences to test, bypassing generation.
+        sud_path: Path to a SUD CoNLL-U treebank file (cross-lingual mode).
 
     Returns:
         Complete results dictionary with per-depth, per-layer, per-head metrics.
     """
     os.makedirs(results_dir, exist_ok=True)
     start_time = time.time()
+    use_sud_gold = False
 
-    # ── Step 1: Generate or use custom sentences ─────────────────────────────
+    # ── Step 1: Acquire sentences ────────────────────────────────────────────
     if custom_sentences:
         logger.info(f"Using {len(custom_sentences)} custom sentences sequentially mapped to depths")
         max_depth = len(custom_sentences)
         all_sentences = {depth: [(sent, "custom")] for depth, sent in enumerate(custom_sentences, start=1)}
+    elif sud_path:
+        logger.info(f"Loading SUD treebank data from: {sud_path}")
+        sud_data = load_sud_treebank(
+            sud_path,
+            max_depth=max_depth,
+            samples_per_depth=num_sentences,
+            seed=seed,
+        )
+        # Convert SUD format to pipeline format: {depth: [(sentence, template)]}
+        all_sentences = {}
+        for depth, sents in sud_data.items():
+            all_sentences[depth] = [
+                (s["sentence_text"], "sud") for s in sents
+            ]
+        # Store SUD parse data for direct use (avoids re-parsing with spaCy)
+        sud_gold_parses = {}
+        for depth, sents in sud_data.items():
+            sud_gold_parses[depth] = sents
+        use_sud_gold = True
+        max_depth = max(all_sentences.keys()) if all_sentences else max_depth
+        logger.info(f"Loaded SUD data for depths: {sorted(all_sentences.keys())}")
     else:
         logger.info(f"Generating sentences (max_depth={max_depth}, "
                     f"num_per_depth={num_sentences})...")
@@ -92,12 +117,22 @@ def run_experiment(
         ):
             try:
                 # ── Parse gold tree ──────────────────────────────────────────
-                parse = parse_sentence(sentence)
-                tokens = parse["tokens"]
-                gold_edges = get_gold_edges(parse)
-                gold_undirected = get_undirected_edges(parse)
-                gold_adj = parse["adjacency_matrix"]
-                head_indices = parse["head_indices"]
+                if use_sud_gold:
+                    # Use gold SUD annotations directly
+                    parse = sud_gold_parses[depth][sent_idx]
+                    tokens = parse["tokens"]
+                    gold_adj = parse["adjacency_matrix"]
+                    head_indices = parse["head_indices"]
+                    # Build gold edges from head indices
+                    gold_edges = [(i, h) for i, h in enumerate(head_indices) if h >= 0]
+                    gold_undirected = {frozenset([i, h]) for i, h in gold_edges}
+                else:
+                    parse = parse_sentence(sentence)
+                    tokens = parse["tokens"]
+                    gold_edges = get_gold_edges(parse)
+                    gold_undirected = get_undirected_edges(parse)
+                    gold_adj = parse["adjacency_matrix"]
+                    head_indices = parse["head_indices"]
 
                 # ── Extract attention ────────────────────────────────────────
                 attn_result = extractor.extract(sentence, tokens)
